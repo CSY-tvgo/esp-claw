@@ -1,0 +1,61 @@
+version: 1.0.0
+# Peripherals Configuration for Waveshare ESP32-S3-RLCD-4.2
+peripherals:
+  # I2C bus shared by ES8311 (DAC) and ES7210 (ADC)
+  - name: i2c_master
+    type: i2c
+    role: master
+    config:
+      port: 0
+      pins:
+        sda: 13
+        scl: 14
+
+  # I2S standard configuration (16 kHz stereo, full-duplex ES8311+ES7210)
+  - name: i2s_audio_out
+    type: i2s
+    role: master
+    format: std-out
+    config: &i2s0_config
+      port: 0
+      sample_rate_hz: 16000
+      mclk_multiple: 256
+      data_bit_width: 16
+      slot_bit_width: I2S_SLOT_BIT_WIDTH_AUTO
+      slot_mode: I2S_SLOT_MODE_STEREO
+      slot_mask: I2S_STD_SLOT_BOTH
+      ws_width: 16
+      pins:
+        mclk: 16
+        bclk: 9
+        ws: 45
+        dout: 8
+        din: 10
+
+  - name: i2s_audio_in
+    type: i2s
+    role: master
+    format: std-in
+    config: *i2s0_config
+
+  # PA control for ES8311 speaker amplifier (active high)
+  - name: gpio_pa_control
+    type: gpio
+    role: io
+    config:
+      pin: 46
+      mode: GPIO_MODE_OUTPUT
+      pull_up: true
+      default_level: 0
+
+  # SPI bus for the RLCD 4.2 reflective monochrome display
+  - name: spi_rlcd
+    type: spi
+    role: master
+    config:
+      spi_bus_config:
+        spi_port: SPI3_HOST
+        mosi_io_num: 12
+        miso_io_num: -1
+        sclk_io_num: 11
+        max_transfer_sz: 15000

@@ -1,0 +1,55 @@
+version: 1.0.0
+# Devices Configuration for Waveshare ESP32-S3-RLCD-4.2
+devices:
+
+  # ES8311 Audio DAC (speaker output via external amplifier on GPIO46)
+  - name: audio_dac
+    chip: es8311
+    type: audio_codec
+    version: default
+    config:
+      dac_enabled: true
+      dac_max_channel: 1
+      dac_channel_mask: "1"
+      dac_init_gain: 0
+      mclk_enabled: true
+      adc_enabled: false
+    peripherals:
+      - name: gpio_pa_control
+        gain: 6
+        active_level: 1
+      - name: i2s_audio_out
+      - name: i2c_master
+        address: 0x30     # ES8311 I2C 8-bit address (7-bit 0x18 << 1)
+        frequency: 400000
+
+  # ES7210 Audio ADC (microphone input, channels 0 and 1)
+  - name: audio_adc
+    chip: es7210
+    type: audio_codec
+    version: default
+    config:
+      adc_enabled: true
+      adc_max_channel: 4
+      adc_channel_mask: "0011"
+      adc_init_gain: 0
+    peripherals:
+      - name: i2s_audio_in
+      - name: i2c_master
+        address: 0x80     # ES7210 I2C 8-bit address (7-bit 0x40 << 1)
+        frequency: 400000
+
+  # RLCD 4.2 reflective monochrome display (custom controller, not auto-initialized)
+  # This display uses a proprietary 1-bpp protocol incompatible with standard esp-lcd.
+  # Access the display via the spi_rlcd bus using the Lua SPI module.
+  # DC=GPIO5, CS=GPIO40, RST=GPIO41, TE=GPIO6
+  - name: rlcd_display
+    chip: custom_rlcd
+    type: custom
+    version: default
+    init_skip: true
+    config:
+      width: 400
+      height: 300
+    peripherals:
+      - name: spi_rlcd
