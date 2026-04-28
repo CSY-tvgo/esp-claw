@@ -59,7 +59,7 @@ typedef struct {
     bool frame_active;
     bool flush_in_flight;
     bool framebuffer_initialized;
-    bool grayscale_enabled;
+    bool binary_enabled;
     SemaphoreHandle_t display_flush_done;
     uint16_t *submit_swap_buffer;
     size_t submit_swap_buffer_pixels;
@@ -98,14 +98,26 @@ static void display_hal_bswap16_into(uint16_t *dst, const uint16_t *src, size_t 
     }
 }
 
-/* Convert an RGB565 pixel to its grayscale equivalent (ITU-R BT.601 luma). */
-static uint16_t display_hal_rgb565_to_gray565(uint16_t c)
+/* 4×4 Bayer ordered dithering matrix (values 0-15). */
+static const uint8_t s_bayer4[4][4] = {
+    {  0,  8,  2, 10 },
+    { 12,  4, 14,  6 },
+    {  3, 11,  1,  9 },
+    { 15,  7, 13,  5 },
+};
+
+/* Convert an RGB565 pixel at screen position (sx, sy) to a binary RGB565
+ * value (0xFFFF = white, 0x0000 = black) using 4×4 Bayer ordered dithering.
+ * Produces a halftone pattern that simulates intermediate shades on binary
+ * (1-bpp) displays such as the RLCD on the Waveshare ESP32-S3-RLCD-4.2. */
+static uint16_t display_hal_rgb565_to_binary565(uint16_t c, int sx, int sy)
 {
     uint32_t r = ((uint32_t)(c >> 11) & 0x1FU) * 255U / 31U;
     uint32_t g = ((uint32_t)(c >> 5)  & 0x3FU) * 255U / 63U;
     uint32_t b = ((uint32_t)(c)       & 0x1FU) * 255U / 31U;
-    uint32_t y = (299U * r + 587U * g + 114U * b) / 1000U;
-    return (uint16_t)(((y & 0xF8U) << 8) | ((y & 0xFCU) << 3) | (y >> 3));
+    uint32_t luma = (299U * r + 587U * g + 114U * b) / 1000U;
+    uint32_t threshold = (uint32_t)s_bayer4[sy & 3][sx & 3] * 16U;
+    return (luma > threshold) ? 0xFFFFU : 0x0000U;
 }
 
 static esp_err_t display_hal_lock(void)
@@ -205,7 +217,7 @@ esp_err_t display_hal_create(esp_lcd_panel_handle_t panel_handle,
     s_state.frame_active = false;
     s_state.flush_in_flight = false;
     s_state.framebuffer_initialized = false;
-    s_state.grayscale_enabled = false;
+    s_state.binary_enabled = false;
     if (display_hal_panel_requires_swap()) {
         s_state.submit_swap_buffer = heap_caps_aligned_alloc(16, (size_t)lcd_width * (size_t)lcd_height * sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         ESP_GOTO_ON_FALSE(s_state.submit_swap_buffer != NULL, ESP_ERR_NO_MEM, fail, TAG, "alloc submit swap buffer failed");
@@ -285,7 +297,7 @@ esp_err_t display_hal_destroy(void)
     s_state.frame_active = false;
     s_state.flush_in_flight = false;
     s_state.framebuffer_initialized = false;
-    s_state.grayscale_enabled = false;
+    s_state.binary_enabled = false;
     s_state.clip_enabled = false;
     s_state.clip_x = 0;
     s_state.clip_y = 0;
@@ -767,10 +779,13 @@ static esp_err_t display_hal_submit_bitmap_locked(int x_start, int y_start,
         ESP_RETURN_ON_FALSE(s_state.submit_swap_buffer != NULL, ESP_ERR_INVALID_STATE, TAG,
                             "submit swap buffer missing");
         swap_buffer = s_state.submit_swap_buffer;
-        if (s_state.grayscale_enabled) {
+        if (s_state.binary_enabled) {
+            int row_width = x_end - x_start;
             for (size_t i = 0; i < pixel_count; ++i) {
+                int sx = x_start + (int)(i % (size_t)row_width);
+                int sy = y_start + (int)(i / (size_t)row_width);
                 swap_buffer[i] = __builtin_bswap16(
-                    display_hal_rgb565_to_gray565(pixels[i]));
+                    display_hal_rgb565_to_binary565(pixels[i], sx, sy));
             }
         } else {
             display_hal_bswap16_into(swap_buffer, pixels, pixel_count);
@@ -1524,24 +1539,24 @@ esp_err_t display_hal_clear_clip_rect(void)
     return ESP_OK;
 }
 
-esp_err_t display_hal_set_grayscale(bool enabled)
+esp_err_t display_hal_set_binary(bool enabled)
 {
     esp_err_t ret = display_hal_lock();
 
     if (ret != ESP_OK) {
         return ret;
     }
-    s_state.grayscale_enabled = enabled;
+    s_state.binary_enabled = enabled;
     display_hal_unlock();
     return ESP_OK;
 }
 
-bool display_hal_is_grayscale(void)
+bool display_hal_is_binary(void)
 {
     bool result = false;
 
     if (display_hal_lock() == ESP_OK) {
-        result = s_state.grayscale_enabled;
+        result = s_state.binary_enabled;
         display_hal_unlock();
     }
     return result;
