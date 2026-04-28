@@ -1369,6 +1369,27 @@ static int lua_display_fill_triangle(lua_State *L)
 }
 
 /* -------------------------------------------------------------------------
+ * Grayscale mode
+ * ---------------------------------------------------------------------- */
+
+static int lua_display_set_grayscale(lua_State *L)
+{
+    bool enabled = lua_toboolean(L, 1);
+    esp_err_t err = display_hal_set_grayscale(enabled);
+
+    if (err != ESP_OK) {
+        return luaL_error(L, "display set_grayscale failed: %s", esp_err_to_name(err));
+    }
+    return 0;
+}
+
+static int lua_display_is_grayscale(lua_State *L)
+{
+    lua_pushboolean(L, display_hal_is_grayscale() ? 1 : 0);
+    return 1;
+}
+
+/* -------------------------------------------------------------------------
  * Module registration
  * ---------------------------------------------------------------------- */
 
@@ -1391,6 +1412,11 @@ int luaopen_display(lua_State *L)
     lua_setfield(L, -2, "set_clip_rect");
     lua_pushcfunction(L, lua_display_clear_clip_rect);
     lua_setfield(L, -2, "clear_clip_rect");
+
+    lua_pushcfunction(L, lua_display_set_grayscale);
+    lua_setfield(L, -2, "set_grayscale");
+    lua_pushcfunction(L, lua_display_is_grayscale);
+    lua_setfield(L, -2, "is_grayscale");
 
     lua_pushcfunction(L, lua_display_fill_rect);
     lua_setfield(L, -2, "fill_rect");

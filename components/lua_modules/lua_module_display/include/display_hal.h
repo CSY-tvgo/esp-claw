@@ -75,6 +75,15 @@ esp_err_t display_hal_get_animation_info(display_hal_animation_info_t *info);
 esp_err_t display_hal_clear(uint16_t color565);
 esp_err_t display_hal_set_clip_rect(int x, int y, int width, int height);
 esp_err_t display_hal_clear_clip_rect(void);
+
+/* --- Grayscale mode (for reflective / monochrome displays) --- */
+
+/* When enabled, every pixel submitted to an IO (SPI/I8080) panel is converted
+ * to its ITU-R BT.601 grayscale equivalent before sending.  Useful for
+ * reflective monochrome displays such as the RLCD on the Waveshare
+ * ESP32-S3-RLCD-4.2 board. */
+esp_err_t display_hal_set_grayscale(bool enabled);
+bool display_hal_is_grayscale(void);
 esp_err_t display_hal_fill_rect(int x, int y, int width, int height, uint16_t color565);
 esp_err_t display_hal_draw_line(int x0, int y0, int x1, int y1, uint16_t color565);
 esp_err_t display_hal_draw_rect(int x, int y, int width, int height, uint16_t color565);
