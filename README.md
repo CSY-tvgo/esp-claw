@@ -138,7 +138,7 @@ Traditional IoT usually stops at connectivity: devices can connect to the networ
   <img src="docs/src/assets/images/claw-breadboard-photo.jpg" width="80%" alt="ESP-Claw on ESP32-S3 Breadboard" />
 </div>
 
-ESP-Claw already supports multiple ESP32-S3-based development boards, including breadboards, M5Stack CoreS3, and more. Supported boards in [`./application/basic_demo/boards/`](./application/basic_demo/boards/) can be flashed online directly: configuration and flashing are done entirely in the browser, with no need to compile firmware locally or install a development environment first.
+ESP-Claw already supports multiple ESP32-S3-based development boards, including breadboards, M5Stack CoreS3, and more. Supported boards in [`./application/edge_agent/boards/`](./application/edge_agent/boards/) can be flashed online directly: configuration and flashing are done entirely in the browser, with no need to compile firmware locally or install a development environment first.
 
 <div align="center">
   <a href="https://esp-claw.com/en/flash/">
@@ -168,9 +168,13 @@ You can find practical examples in our [documentation](https://esp-claw.com/en/t
 
 **IM**: ESP-Claw supports Telegram, QQ, Feishu, and WeChat, and can be extended further.
 
-> [!NOTE]
->
-> This project is still under active development. If you run into any issues, feel free to open an issue.
+## Development Plan
+
+ESP-Claw is still under active development. Feel free to open an issue to report problems or request features. You can also share your ideas through our [online survey (in Chinese)](https://fcn5wbhnyubf.feishu.cn/share/base/form/shrcndYcjbGFY1ymttTSyYoGIPh).
+
+[Click here to view our TODO List (in Chinese)](https://fcn5wbhnyubf.feishu.cn/wiki/SRlgwWUYei4WmykU8uMcUtzTnFf?table=tblWSgzWcyW7jv7B&view=vewaP9B0KX) and vote for the features or issues you care about. That helps us prioritize them sooner.
+
+
 
 ## 📷 Follow Us
 
