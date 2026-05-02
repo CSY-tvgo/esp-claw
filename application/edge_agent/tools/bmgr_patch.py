@@ -135,7 +135,7 @@ def patch_gen_board_periph_config_file(path: Path) -> bool:
 
     The generator also emits a default ``.mclk_multiple`` line *before*
     ``.ext_clk_freq_hz``, then a second ``.mclk_multiple`` line (user value) immediately
-    after.  Removing only ``.ext_clk_freq_hz`` would leave a duplicate initialiser, so
+    after.  Removing only ``.ext_clk_freq_hz`` would leave a duplicate initializer, so
     both the ``ext_clk_freq_hz`` line and the subsequent ``mclk_multiple`` line are
     dropped together (the earlier default ``mclk_multiple`` remains and carries the
     correct value).
