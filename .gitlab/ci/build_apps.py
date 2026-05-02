@@ -34,6 +34,13 @@ except ImportError:
 logger = logging.getLogger('idf_build_apps')
 IDF_PATH = os.getenv('IDF_PATH', '')
 BOARD_NAME = 'default'
+BOARD_PATH = ''
+
+# Virtual board variants -> (real board for gen-bmgr-config, extra sdkconfig.defaults snippet)
+BOARD_VARIANTS: t.Dict[str, t.Tuple[str, str]] = {
+    'esp32_p4x_function_ev': ('esp32_p4_function_ev', '# CONFIG_ESP32P4_SELECTS_REV_LESS_V3 is not set\n'),
+    'esp32_p4x_eye': ('esp32_p4_eye', '# CONFIG_ESP32P4_SELECTS_REV_LESS_V3 is not set\n'),
+}
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
 APPS_BUILD_PER_JOB = 30
@@ -55,6 +62,7 @@ IGNORE_WARNINGS = [
     r'.+MultiCommand.+',
     r'warning: \'ISP_AWB_SAMPLE_POINT_BEFORE_CCM\' is deprecated: Use ISP_AWB_SAMPLE_POINT_0 instead \[-Wdeprecated-declarations\]',
     r'warning: \'ISP_AE_SAMPLE_POINT_AFTER_DEMOSAIC\' is deprecated: Use ISP_AE_SAMPLE_POINT_0 instead \[-Wdeprecated-declarations\]',
+    r'warning: \'touch_cst816s_read_id\' declared \'static\' but never defined \[-Wunused-function\]',
 ]
 
 class CustomApp(CMakeApp):
@@ -76,8 +84,14 @@ class CustomApp(CMakeApp):
             os.remove(os.path.join(self.work_dir, 'dependencies.lock'))
         board_name = BOARD_NAME.strip()
         if board_name != 'default':
+            actual_board, extra_defaults = BOARD_VARIANTS.get(board_name, (board_name, ''))
             if self.is_board_manager_project():
-                self._pre_hook(board_name)
+                self._pre_hook(actual_board)
+                if extra_defaults:
+                    defaults = Path(self.work_dir) / 'components' / 'gen_bmgr_codes' / 'board_manager.defaults'
+                    if defaults.is_file():
+                        with open(defaults, 'a', encoding='utf-8') as f:
+                            f.write('\n' + extra_defaults)
             else:
                 logger.warning(
                     "Board '%s' specified but app '%s' has no esp_board_manager dependency; building as normal.",
@@ -90,6 +104,14 @@ class CustomApp(CMakeApp):
             modified_files=modified_files,
             check_app_dependencies=check_app_dependencies,
         )
+
+    def _resolve_board_path(self) -> t.Optional[Path]:
+        if not BOARD_PATH.strip():
+            return None
+        board_path = Path(BOARD_PATH.strip())
+        if board_path.is_absolute():
+            return board_path
+        return Path(self.work_dir).absolute() / board_path
 
     def _get_project_manifest_paths(self) -> t.List[Path]:
         proj = Path(self.work_dir).absolute()
@@ -152,19 +174,25 @@ class CustomApp(CMakeApp):
             logger.warning('IDF_PATH is not set; skip board manager config generation.')
             return
 
+        board_path = self._resolve_board_path()
+
         # Set environment variable for IDF_EXTRA_ACTIONS_PATH
         env = os.environ.copy()
 
+        cmd = [
+            sys.executable,
+            f'{IDF_PATH}/tools/idf.py',
+            'gen-bmgr-config',
+        ]
+        if board_path is not None:
+            cmd.extend(['-c', str(board_path)])
+        cmd.extend([
+            '-b',
+            board_name,
+        ])
+
         subprocess.run(
-            [
-                sys.executable,
-                f'{IDF_PATH}/tools/idf.py',
-                'gen-bmgr-config',
-                '-c',
-                str(Path(self.work_dir).absolute() / 'boards'),
-                '-b',
-                board_name,
-            ],
+            cmd,
             cwd=self.work_dir,
             env=env,
             check=True,
@@ -213,8 +241,9 @@ def get_cmake_apps(
 
 def main(args):  # type: (argparse.Namespace) -> None
     default_build_targets = args.default_build_targets.split(',') if args.default_build_targets else None
-    global BOARD_NAME
+    global BOARD_NAME, BOARD_PATH
     BOARD_NAME = (args.board or '').strip()
+    BOARD_PATH = (args.board_path or '').strip()
     apps = get_cmake_apps(args.paths, args.target, args.config, args.ignore_warnings, args.recursive, default_build_targets)
 
     if args.find:
@@ -338,6 +367,11 @@ if __name__ == '__main__':
         '--ignore-warnings',
         action='store_true',
         help='Ignore warnings when building apps',
+    )
+    parser.add_argument(
+        '--board-path',
+        default=None,
+        help='Optional extra board package path passed to Board Manager. Ignored when --board is empty or default.',
     )
     parser.add_argument(
         '--board',

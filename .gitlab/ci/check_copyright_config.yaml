@@ -38,9 +38,20 @@ examples_and_unit_tests:
   - Unlicense
   license_for_new_files: Apache-2.0
 
+edge_agent_boards:
+  include:
+    - 'application/edge_agent/boards/espressif/**/*'
+  allowed_licenses:
+  - Apache-2.0
+  - CC0-1.0
+  - LicenseRef-Espressif-Modified-MIT
+  license_for_new_files: Apache-2.0
+
 ignore:  # You can also select ignoring files here
   perform_check: no  # Don't check files from that block
   include:
+    - 'application/edge_agent/boards/**'
+    - '!application/edge_agent/boards/espressif/**'
     - 'components/audio/dac_audio/test/wave_1ch_16bits.c'
     - 'components/audio/dac_audio/test/wave_1ch_8bits.c'
     - 'components/audio/dac_audio/test/wave_2ch_16bits.c'
