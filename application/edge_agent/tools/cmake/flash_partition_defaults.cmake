@@ -17,11 +17,31 @@ if(EDGE_AGENT_FLASH_SIZE)
         file(WRITE "${CMAKE_SOURCE_DIR}/sdkconfig" "${EDGE_AGENT_SDKCONFIG_CONTENT}")
     endif()
 
+    # Prefer a board-specific partition CSV when the SDKCONFIG_DEFAULTS list
+    # contains a board defaults file whose directory holds the file.
+    set(EDGE_AGENT_PARTITION_CSV "partitions_${EDGE_AGENT_FLASH_SIZE}.csv")
+    set(_sdkconfig_defaults_list "")
+    if(SDKCONFIG_DEFAULTS)
+        set(_sdkconfig_defaults_list "${SDKCONFIG_DEFAULTS}")
+    elseif(NOT "$ENV{SDKCONFIG_DEFAULTS}" STREQUAL "")
+        set(_sdkconfig_defaults_list "$ENV{SDKCONFIG_DEFAULTS}")
+    endif()
+    if(_sdkconfig_defaults_list)
+        string(REPLACE ";" ";" _sdkconfig_defaults_list "${_sdkconfig_defaults_list}")
+        foreach(_defaults_file IN LISTS _sdkconfig_defaults_list)
+            get_filename_component(_defaults_dir "${_defaults_file}" DIRECTORY)
+            if(EXISTS "${_defaults_dir}/partitions_${EDGE_AGENT_FLASH_SIZE}.csv")
+                file(RELATIVE_PATH EDGE_AGENT_PARTITION_CSV "${CMAKE_SOURCE_DIR}" "${_defaults_dir}/partitions_${EDGE_AGENT_FLASH_SIZE}.csv")
+                break()
+            endif()
+        endforeach()
+    endif()
+
     set(EDGE_AGENT_PARTITION_DEFAULTS "${CMAKE_BINARY_DIR}/edge_agent_partition_auto.defaults")
     file(WRITE "${EDGE_AGENT_PARTITION_DEFAULTS}"
         "# Auto-generated from flash size selection. Do not edit.\n"
         "CONFIG_PARTITION_TABLE_CUSTOM=y\n"
-        "CONFIG_PARTITION_TABLE_CUSTOM_FILENAME=\"partitions_${EDGE_AGENT_FLASH_SIZE}.csv\"\n")
+        "CONFIG_PARTITION_TABLE_CUSTOM_FILENAME=\"${EDGE_AGENT_PARTITION_CSV}\"\n")
 
     if(SDKCONFIG_DEFAULTS)
         set(SDKCONFIG_DEFAULTS "${SDKCONFIG_DEFAULTS};${EDGE_AGENT_PARTITION_DEFAULTS}")
@@ -31,5 +51,5 @@ if(EDGE_AGENT_FLASH_SIZE)
         set(SDKCONFIG_DEFAULTS "${CMAKE_SOURCE_DIR}/sdkconfig.defaults;${EDGE_AGENT_PARTITION_DEFAULTS}")
     endif()
 
-    message(STATUS "${EDGE_AGENT_PROJECT_LOG_PREFIX} Partition table auto-selected: partitions_${EDGE_AGENT_FLASH_SIZE}.csv")
+    message(STATUS "${EDGE_AGENT_PROJECT_LOG_PREFIX} Partition table auto-selected: ${EDGE_AGENT_PARTITION_CSV}")
 endif()
