@@ -127,3 +127,7 @@ build_application_edge_agent:
       - EXAMPLE_BOARD: esp_SensairShuttle
         EXAMPLE_TARGET: esp32c5
         EXAMPLE_BOARD_BRAND: "espressif"
+
+      - EXAMPLE_BOARD: waveshare_ESP32_S3_RLCD_4_2
+        EXAMPLE_TARGET: esp32s3
+        EXAMPLE_BOARD_BRAND: "waveshare"
