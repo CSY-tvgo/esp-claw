@@ -30,6 +30,46 @@ static size_t              s_ws_count;
 static uint32_t            s_evt_seq;
 static bool                s_webim_bound;
 
+typedef struct {
+    char *json;
+    size_t len;
+    int fds[WEBIM_WS_MAX_CLIENTS];
+    size_t fd_count;
+} webim_ws_broadcast_job_t;
+
+static esp_err_t webim_ws_mx_ensure(void);
+static void webim_ws_fd_remove(int fd);
+static esp_err_t webim_ws_queue_json_to_fds(const int *fds, size_t fd_count, const char *json);
+
+static void webim_ws_broadcast_job_run(void *arg)
+{
+    webim_ws_broadcast_job_t *job = arg;
+    httpd_ws_frame_t pkt;
+
+    if (!job) {
+        return;
+    }
+
+    memset(&pkt, 0, sizeof(pkt));
+    pkt.type = HTTPD_WS_TYPE_TEXT;
+    pkt.payload = (uint8_t *)job->json;
+    pkt.len = job->len;
+
+    for (size_t i = 0; i < job->fd_count; i++) {
+        esp_err_t send_err = httpd_ws_send_frame_async(s_httpd, job->fds[i], &pkt);
+
+        if (send_err != ESP_OK) {
+            webim_ws_fd_remove(job->fds[i]);
+            ESP_LOGW(TAG, "WS async drop fd=%d (%s)", job->fds[i], esp_err_to_name(send_err));
+        } else {
+            ESP_LOGI(TAG, "WS async sent fd=%d ok", job->fds[i]);
+        }
+    }
+
+    free(job->json);
+    free(job);
+}
+
 static esp_err_t webim_ws_mx_ensure(void)
 {
     if (s_ws_mx) {
@@ -37,6 +77,25 @@ static esp_err_t webim_ws_mx_ensure(void)
     }
     s_ws_mx = xSemaphoreCreateMutex();
     return s_ws_mx ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+static void webim_ws_gc_locked(void)
+{
+    size_t write = 0;
+
+    if (!s_httpd) {
+        return;
+    }
+    for (size_t i = 0; i < s_ws_count; i++) {
+        httpd_ws_client_info_t info = httpd_ws_get_fd_info(s_httpd, s_ws_fds[i]);
+
+        if (info == HTTPD_WS_CLIENT_WEBSOCKET) {
+            s_ws_fds[write++] = s_ws_fds[i];
+        } else {
+            ESP_LOGW(TAG, "WS gc: pruned stale fd=%d", s_ws_fds[i]);
+        }
+    }
+    s_ws_count = write;
 }
 
 static void webim_ws_fd_add(int fd)
@@ -53,9 +112,14 @@ static void webim_ws_fd_add(int fd)
             return;
         }
     }
+    if (s_ws_count >= WEBIM_WS_MAX_CLIENTS) {
+        webim_ws_gc_locked();
+    }
     if (s_ws_count < WEBIM_WS_MAX_CLIENTS) {
         s_ws_fds[s_ws_count++] = fd;
-        ESP_LOGD(TAG, "WS client fd=%d (n=%u)", fd, (unsigned)s_ws_count);
+        ESP_LOGI(TAG, "WS client fd=%d (n=%u)", fd, (unsigned)s_ws_count);
+    } else {
+        ESP_LOGW(TAG, "WS client fd=%d rejected: max clients reached", fd);
     }
     xSemaphoreGive(s_ws_mx);
 }
@@ -79,9 +143,13 @@ static void webim_ws_fd_remove(int fd)
     xSemaphoreGive(s_ws_mx);
 }
 
+void http_server_webim_ws_fd_remove(int fd)
+{
+    webim_ws_fd_remove(fd);
+}
+
 static void webim_ws_broadcast_json(const char *json)
 {
-    httpd_ws_frame_t pkt;
     int local_fds[WEBIM_WS_MAX_CLIENTS];
     size_t local_count = 0;
 
@@ -89,12 +157,8 @@ static void webim_ws_broadcast_json(const char *json)
         return;
     }
 
-    memset(&pkt, 0, sizeof(pkt));
-    pkt.type = HTTPD_WS_TYPE_TEXT;
-    pkt.payload = (uint8_t *)json;
-    pkt.len = strlen(json);
-
     xSemaphoreTake(s_ws_mx, portMAX_DELAY);
+    webim_ws_gc_locked();
     local_count = s_ws_count;
     memcpy(local_fds, s_ws_fds, local_count * sizeof(int));
     xSemaphoreGive(s_ws_mx);
@@ -104,18 +168,44 @@ static void webim_ws_broadcast_json(const char *json)
         return;
     }
 
-    ESP_LOGI(TAG, "WS broadcast: %u client(s) len=%u", (unsigned)local_count, (unsigned)pkt.len);
+    ESP_LOGI(TAG, "WS broadcast: %u client(s) len=%u", (unsigned)local_count, (unsigned)strlen(json));
+    (void)webim_ws_queue_json_to_fds(local_fds, local_count, json);
+}
 
-    for (size_t i = 0; i < local_count; i++) {
-        esp_err_t err = httpd_ws_send_data(s_httpd, local_fds[i], &pkt);
+static esp_err_t webim_ws_queue_json_to_fds(const int *fds, size_t fd_count, const char *json)
+{
+    webim_ws_broadcast_job_t *job = NULL;
+    esp_err_t err;
 
-        if (err != ESP_OK) {
-            webim_ws_fd_remove(local_fds[i]);
-            ESP_LOGW(TAG, "WS drop fd=%d (%s)", local_fds[i], esp_err_to_name(err));
-        } else {
-            ESP_LOGI(TAG, "WS sent fd=%d ok", local_fds[i]);
-        }
+    if (!json || !json[0] || !fds || fd_count == 0) {
+        return ESP_ERR_INVALID_ARG;
     }
+
+    job = calloc(1, sizeof(*job));
+    if (!job) {
+        ESP_LOGW(TAG, "WS queue skipped: no memory for job");
+        return ESP_ERR_NO_MEM;
+    }
+
+    job->json = strdup(json);
+    if (!job->json) {
+        ESP_LOGW(TAG, "WS queue skipped: no memory for payload");
+        free(job);
+        return ESP_ERR_NO_MEM;
+    }
+
+    job->len = strlen(job->json);
+    job->fd_count = fd_count;
+    memcpy(job->fds, fds, fd_count * sizeof(int));
+
+    err = httpd_queue_work(s_httpd, webim_ws_broadcast_job_run, job);
+
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "WS queue failed: %s", esp_err_to_name(err));
+        free(job->json);
+        free(job);
+    }
+    return err;
 }
 
 static esp_err_t webim_emit_outbound_json(const cap_im_local_message_t *message)
@@ -165,13 +255,15 @@ static esp_err_t webim_outbound_cb(const cap_im_local_message_t *message, void *
 {
     (void)user_ctx;
     if (!message || !message->chat_id || !message->chat_id[0]) {
+        ESP_LOGD(TAG, "outbound_cb: dropped (no message or chat_id)");
         return ESP_OK;
     }
     if (strcmp(message->channel, WEB_IM_CHANNEL) != 0) {
+        ESP_LOGD(TAG, "outbound_cb: dropped channel=%s (expected %s)",
+                 message->channel, WEB_IM_CHANNEL);
         return ESP_OK;
     }
-    (void)webim_emit_outbound_json(message);
-    return ESP_OK;
+    return webim_emit_outbound_json(message);
 }
 
 esp_err_t http_server_webim_bind_im(void)
