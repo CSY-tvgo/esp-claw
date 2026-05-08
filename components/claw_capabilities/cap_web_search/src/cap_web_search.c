@@ -36,7 +36,9 @@ typedef struct {
     char *data;
     size_t len;
     size_t cap;
+    /* Maximum captured response body length; 0 means unlimited. */
     size_t max_len;
+    /* True when response body exceeds max_len and was truncated. */
     bool truncated;
 } cap_web_search_buf_t;
 
@@ -238,12 +240,12 @@ static bool cap_web_search_host_matches_allowlist_token(const char *host, const 
 
     if (token[0] == '.') {
         const char *exact = token + 1;
-        size_t suffix_len = token_len;
+        size_t dot_suffix_len = token_len;
         if (strcasecmp(host, exact) == 0) {
             return true;
         }
-        return host_len > suffix_len &&
-               strcasecmp(host + host_len - suffix_len, token) == 0;
+        return host_len > dot_suffix_len &&
+               strcasecmp(host + host_len - dot_suffix_len, token) == 0;
     }
 
     return strcasecmp(host, token) == 0;
@@ -278,6 +280,7 @@ static bool cap_web_search_host_allowed(const char *host)
         if (!start[0]) {
             continue;
         }
+        /* Safe in-place normalization on stack copy for [IPv6] allowlist tokens. */
         if (start[0] == '[' && end > start + 2 && end[-1] == ']') {
             start++;
             end[-1] = '\0';
@@ -720,10 +723,7 @@ static esp_err_t cap_web_search_http_request_execute(const char *input_json,
         return ESP_ERR_INVALID_ARG;
     }
 
-    buf.cap = 4096;
-    if ((size_t)max_body_bytes + 1 < buf.cap) {
-        buf.cap = (size_t)max_body_bytes + 1;
-    }
+    buf.cap = ((size_t)max_body_bytes + 1 < 4096) ? (size_t)max_body_bytes + 1 : 4096;
     buf.data = calloc(1, buf.cap);
     if (!buf.data) {
         cJSON_Delete(input);
