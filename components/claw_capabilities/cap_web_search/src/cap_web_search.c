@@ -23,7 +23,7 @@ static const char *TAG = "cap_web_search";
 #define CAP_WEB_SEARCH_RESULT_COUNT 5
 #define CAP_WEB_SEARCH_HTTP_TIMEOUT_MS_DEFAULT 15000
 #define CAP_WEB_SEARCH_HTTP_MAX_BODY_DEFAULT   (16 * 1024)
-#define CAP_WEB_SEARCH_HTTP_MAX_BODY_LIMIT     (64 * 1024)
+#define CAP_WEB_SEARCH_HTTP_MAX_BODY_LIMIT     ((64 * 1024) - 1)
 #define CAP_WEB_SEARCH_HTTP_ALLOWLIST_MAX      320
 
 typedef enum {
@@ -240,12 +240,12 @@ static bool cap_web_search_host_matches_allowlist_token(const char *host, const 
 
     if (token[0] == '.') {
         const char *exact = token + 1;
-        size_t dot_suffix_len = token_len;
+        size_t token_with_dot_len = token_len;
         if (strcasecmp(host, exact) == 0) {
             return true;
         }
-        return host_len > dot_suffix_len &&
-               strcasecmp(host + host_len - dot_suffix_len, token) == 0;
+        return host_len > token_with_dot_len &&
+               strcasecmp(host + host_len - token_with_dot_len, token) == 0;
     }
 
     return strcasecmp(host, token) == 0;
@@ -281,7 +281,7 @@ static bool cap_web_search_host_allowed(const char *host)
             continue;
         }
         /* Safe in-place normalization on stack copy for [IPv6] allowlist tokens. */
-        if (start[0] == '[' && end > start + 2 && end[-1] == ']') {
+        if (start[0] == '[' && end > start + 1 && end[-1] == ']') {
             start++;
             end[-1] = '\0';
         }
@@ -807,7 +807,7 @@ static const claw_cap_descriptor_t s_web_search_descriptors[] = {
         "\"headers\":{\"type\":\"object\",\"additionalProperties\":{\"type\":\"string\"}},"
         "\"body\":{\"type\":\"string\"},"
         "\"timeout_ms\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":120000},"
-        "\"max_body_bytes\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":65536}},"
+        "\"max_body_bytes\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":65535}},"
         "\"required\":[\"url\"]}",
         .execute = cap_web_search_http_request_execute,
     },
