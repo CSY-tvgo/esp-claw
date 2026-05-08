@@ -13,6 +13,7 @@ import { RestartConfirmModal } from '../components/system/RestartConfirmModal';
 type SearchForm = {
   search_brave_key: string;
   search_tavily_key: string;
+  search_http_allowlist: string;
 };
 
 export const SearchPage: Component<{ onRestartRequest: () => void }> = (props) => {
@@ -22,10 +23,12 @@ export const SearchPage: Component<{ onRestartRequest: () => void }> = (props) =
     toForm: (config: Partial<AppConfig>) => ({
       search_brave_key: config.search_brave_key ?? '',
       search_tavily_key: config.search_tavily_key ?? '',
+      search_http_allowlist: config.search_http_allowlist ?? '',
     }),
     fromForm: (form) => ({
       search_brave_key: form.search_brave_key.trim(),
       search_tavily_key: form.search_tavily_key.trim(),
+      search_http_allowlist: form.search_http_allowlist.trim(),
     }),
   });
   const [confirmOpen, setConfirmOpen] = createSignal(false);
@@ -60,6 +63,12 @@ export const SearchPage: Component<{ onRestartRequest: () => void }> = (props) =
               label={t('searchTavilyKey')}
               value={tab.form.search_tavily_key}
               onInput={(event) => tab.setForm('search_tavily_key', event.currentTarget.value)}
+            />
+            <TextInput
+              label={t('searchHttpAllowlist')}
+              placeholder={t('searchHttpAllowlistPlaceholder') as string}
+              value={tab.form.search_http_allowlist}
+              onInput={(event) => tab.setForm('search_http_allowlist', event.currentTarget.value)}
             />
           </div>
         </StaticConfigBlock>

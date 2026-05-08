@@ -506,6 +506,9 @@ static esp_err_t app_cap_prepare_web_search(const app_claw_config_t *config,
                             TAG, "Failed to set Tavily search key");
     }
 
+    ESP_RETURN_ON_ERROR(cap_web_search_set_http_allowlist(config->search_http_allowlist),
+                        TAG, "Failed to set HTTP allowlist");
+
     return ESP_OK;
 }
 

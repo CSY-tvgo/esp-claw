@@ -82,6 +82,7 @@ type ImForm = {
 type SearchForm = {
   search_brave_key: string;
   search_tavily_key: string;
+  search_http_allowlist: string;
 };
 
 type ProviderPreset = {
@@ -212,6 +213,7 @@ function searchFromConfig(config: Partial<AppConfig>): SearchForm {
   return {
     search_brave_key: config.search_brave_key ?? '',
     search_tavily_key: config.search_tavily_key ?? '',
+    search_http_allowlist: config.search_http_allowlist ?? '',
   };
 }
 
@@ -711,6 +713,7 @@ export const SetupWizardPage: Component<SetupWizardPageProps> = (props) => {
   const saveSearch = async () => {
     await savePatch({
       search_tavily_key: searchForm.search_tavily_key.trim(),
+      search_http_allowlist: searchForm.search_http_allowlist.trim(),
     });
   };
 
@@ -1053,6 +1056,14 @@ export const SetupWizardPage: Component<SetupWizardPageProps> = (props) => {
                       label={t('searchTavilyKey')}
                       value={searchForm.search_tavily_key}
                       onInput={(event) => setSearchForm('search_tavily_key', event.currentTarget.value)}
+                    />
+                    <TextInput
+                      label={t('searchHttpAllowlist')}
+                      placeholder={t('searchHttpAllowlistPlaceholder') as string}
+                      value={searchForm.search_http_allowlist}
+                      onInput={(event) =>
+                        setSearchForm('search_http_allowlist', event.currentTarget.value)
+                      }
                     />
                   </div>
                 </Match>

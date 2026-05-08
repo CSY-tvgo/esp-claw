@@ -156,6 +156,8 @@ export const zhCn: Dict = {
     '如填写，ESP-Claw 可在运行中检索在线资源。提示：系统自带的天气 Skill 也依赖在线搜索功能。',
   searchBraveKey: 'Brave Search API Key',
   searchTavilyKey: 'Tavily API Key',
+  searchHttpAllowlist: 'HTTP 白名单（域名/IP，逗号分隔）',
+  searchHttpAllowlistPlaceholder: 'api.example.com,*.example.org,203.0.113.10',
 
   sectionCapabilities: 'Capability Group',
   capabilitiesDescription:

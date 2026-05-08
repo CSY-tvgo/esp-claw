@@ -45,6 +45,7 @@ typedef struct {
     char wechat_account_id[APP_CLAW_SHORT_STR_LEN];
     char search_brave_key[APP_CLAW_STR_LEN];
     char search_tavily_key[APP_CLAW_STR_LEN];
+    char search_http_allowlist[APP_CLAW_STR_LEN];
     char enabled_cap_groups[APP_CLAW_STR_LEN];
     char llm_visible_cap_groups[APP_CLAW_STR_LEN];
     char enabled_lua_modules[APP_CLAW_STR_LEN];

@@ -162,6 +162,8 @@ export const en = {
     'If set, ESP-Claw can search online. Tip: Built-in weather skill also relies on online search.',
   searchBraveKey: 'Brave Search API Key',
   searchTavilyKey: 'Tavily API Key',
+  searchHttpAllowlist: 'HTTP allowlist (domains/IP, comma-separated)',
+  searchHttpAllowlistPlaceholder: 'api.example.com,*.example.org,203.0.113.10',
 
   sectionCapabilities: 'Capability Groups',
   capabilitiesDescription:

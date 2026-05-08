@@ -24,6 +24,7 @@ export type AppConfig = {
   wechat_account_id: string;
   search_brave_key: string;
   search_tavily_key: string;
+  search_http_allowlist: string;
   enabled_cap_groups: string;
   llm_visible_cap_groups: string;
   enabled_lua_modules: string;
@@ -68,7 +69,7 @@ export const GROUP_FIELDS: Record<ConfigGroup, (keyof AppConfig)[]> = {
     'wechat_cdn_base_url',
     'wechat_account_id',
   ],
-  search: ['search_brave_key', 'search_tavily_key'],
+  search: ['search_brave_key', 'search_tavily_key', 'search_http_allowlist'],
   capabilities: ['enabled_cap_groups', 'llm_visible_cap_groups'],
   skills: ['enabled_lua_modules'],
   time: ['time_timezone'],
