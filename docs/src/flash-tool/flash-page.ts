@@ -16,6 +16,10 @@ type FirmwareRecord = {
   merged_binary: FirmwareBinaryLinks;
   min_flash_size?: number;
   min_psram_size?: number;
+  nvs_info?: {
+    start_addr?: string;
+    size?: string;
+  };
 };
 
 type FirmwareBoards = Record<string, FirmwareRecord>;
@@ -36,6 +40,10 @@ type Strings = {
   chooseBrandLabel: string;
   chooseBoardLabel: string;
   chooseConsoleOutputLabel: string;
+  preserveConfigLabel: string;
+  preserveConfigHint: string;
+  preserveConfigKeep: string;
+  preserveConfigOverwrite: string;
   chooseChipPlaceholder: string;
   chooseBrandPlaceholder: string;
   chooseConsoleOutputPlaceholder: string;
@@ -176,6 +184,7 @@ const els = {
   brandSelect: must<HTMLSelectElement>("brand-select"),
   boardSelect: must<HTMLSelectElement>("board-select"),
   consoleOutputSelect: must<HTMLSelectElement>("console-output-select"),
+  preserveConfigSelect: must<HTMLSelectElement>("preserve-config-select"),
   selectedBoardName: must("selected-board-name"),
   selectedBoardDesc: must("selected-board-desc"),
   selectedBoardMeta: must("selected-board-meta"),
@@ -258,6 +267,7 @@ const state = {
   selectedBrand: null as string | null,
   selectedBoardId: null as string | null,
   selectedConsoleOutput: null as string | null,
+  preserveConfig: true,
   visibleBoards: [] as VisibleBoard[],
   detectedConsoleOutput: null as DetectedConsoleOutput,
   readyIp: null as string | null,
@@ -302,6 +312,7 @@ async function init() {
   refreshBoards();
   renderActionState();
   renderConsole();
+  els.preserveConfigSelect.value = state.preserveConfig ? "keep" : "overwrite";
 
   els.chipSelect.addEventListener("change", () => {
     state.selectedChip = els.chipSelect.value || null;
@@ -325,6 +336,9 @@ async function init() {
     state.selectedConsoleOutput = els.consoleOutputSelect.value || null;
     renderSelectedBoard();
     renderActionState();
+  });
+  els.preserveConfigSelect.addEventListener("change", () => {
+    state.preserveConfig = els.preserveConfigSelect.value !== "overwrite";
   });
 
   els.connectBtn.addEventListener("click", () => {
@@ -1024,7 +1038,11 @@ async function flashSelectedFirmware() {
 
     state.flash = "flashing";
     updateModalProgress(s.writingFlash, 0);
-    addProgressLine(`Flashing ${selected.boardKey} from 0x0`);
+    addProgressLine(
+      state.preserveConfig
+        ? `Flashing ${selected.boardKey} with config retention`
+        : `Flashing ${selected.boardKey} from 0x0`,
+    );
 
     const loader = state.loader;
     let fastBaudForFlash = false;
@@ -1037,28 +1055,10 @@ async function flashSelectedFirmware() {
       }
     }
 
-    let lastWritePct = 0;
     try {
-      await loader.flashData(binary, (written, total) => {
-        const pct = total > 0 ? Math.round((written / total) * 100) : 0;
-        lastWritePct = pct;
+      await flashBinaryWithConfigPolicy(loader, selected.firmware, binary, (pct) => {
         updateModalProgress(s.writingFlash, pct);
-      }, 0x0, true);
-    } catch (flashError) {
-      // On ESP32-P4 (and some other chips) via UART, the stub does not respond
-      // to the ESP_FLASH_BEGIN(0,0) finalization command after a large compressed
-      // write, causing a "Timed out waiting for packet header" error even though
-      // all data blocks were written successfully.  The post-flash reset is done
-      // via hardware DTR/RTS signals and does not rely on flashDeflFinish, so it
-      // is safe to continue the post-flash flow when this specific condition is met.
-      const isFinalizeTimeout =
-        lastWritePct >= 100 &&
-        getErrorMessage(flashError).includes("Timed out waiting for packet");
-      if (!isFinalizeTimeout) {
-        throw flashError;
-      }
-      addProgressLine("Note: stub finalization timed out after write; continuing with hardware reset.");
-      updateModalProgress(s.writingFlash, 100);
+      });
     } finally {
       if (fastBaudForFlash && loader.IS_STUB) {
         try {
@@ -1556,6 +1556,104 @@ async function downloadBinary(
   return merged.buffer;
 }
 
+async function flashBinaryWithConfigPolicy(
+  loader: ESPLoader,
+  firmware: FirmwareRecord,
+  binary: ArrayBuffer,
+  onProgress: (pct: number) => void,
+) {
+  if (!state.preserveConfig) {
+    await flashBinaryChunk(loader, binary, 0x0, onProgress);
+    return;
+  }
+
+  const segments = getFlashSegmentsPreservingNvs(binary, firmware);
+  if (segments.length === 0) {
+    throw new Error("No writable firmware region found outside NVS.");
+  }
+
+  addProgressLine("Keeping existing NVS configuration partition.");
+  const totalBytes = segments.reduce((sum, segment) => sum + segment.size, 0);
+  let writtenBefore = 0;
+
+  for (const segment of segments) {
+    if (segment.offset + segment.size > binary.byteLength) {
+      throw new Error(
+        `Flash segment exceeds binary size: end=${segment.offset + segment.size}, size=${binary.byteLength}.`,
+      );
+    }
+    const segmentData = binary.slice(segment.offset, segment.offset + segment.size);
+    await flashBinaryChunk(loader, segmentData, segment.offset, (segmentPct) => {
+      const writtenNow = Math.round((segment.size * segmentPct) / 100);
+      const totalPct = Math.round(((writtenBefore + writtenNow) / totalBytes) * 100);
+      onProgress(totalPct);
+    });
+    writtenBefore += segment.size;
+    onProgress(Math.round((writtenBefore / totalBytes) * 100));
+  }
+}
+
+async function flashBinaryChunk(
+  loader: ESPLoader,
+  binary: ArrayBuffer,
+  flashOffset: number,
+  onProgress: (pct: number) => void,
+) {
+  let lastWritePct = 0;
+  try {
+    await loader.flashData(
+      binary,
+      (written, total) => {
+        const pct = total > 0 ? Math.round((written / total) * 100) : 0;
+        lastWritePct = pct;
+        onProgress(pct);
+      },
+      flashOffset,
+      true,
+    );
+  } catch (flashError) {
+    // On ESP32-P4 (and some other chips) via UART, the stub does not respond
+    // to the ESP_FLASH_BEGIN(0,0) finalization command after a large compressed
+    // write, causing a "Timed out waiting for packet header" error even though
+    // all data blocks were written successfully.  The post-flash reset is done
+    // via hardware DTR/RTS signals and does not rely on flashDeflFinish, so it
+    // is safe to continue the post-flash flow when this specific condition is met.
+    const isFinalizeTimeout =
+      lastWritePct >= 100 &&
+      getErrorMessage(flashError).includes("Timed out waiting for packet");
+    if (!isFinalizeTimeout) {
+      throw flashError;
+    }
+    addProgressLine("Note: stub finalization timed out after write; continuing with hardware reset.");
+    onProgress(100);
+  }
+}
+
+function getFlashSegmentsPreservingNvs(binary: ArrayBuffer, firmware: FirmwareRecord) {
+  const parsedNvsStart = parseHexAddress(firmware.nvs_info?.start_addr);
+  const parsedNvsSize = parseHexAddress(firmware.nvs_info?.size);
+  const binarySize = binary.byteLength;
+  if (parsedNvsStart === null || parsedNvsSize === null || parsedNvsSize <= 0) {
+    throw new Error(
+      'This firmware does not support configuration retention. Please select "Erase and reset settings" to continue.',
+    );
+  }
+
+  const nvsEnd = parsedNvsStart + parsedNvsSize;
+  if (parsedNvsStart < 0 || parsedNvsStart >= binarySize || nvsEnd > binarySize) {
+    throw new Error("Invalid NVS region in firmware metadata. Disable configuration retention and retry.");
+  }
+
+  const segments: Array<{ offset: number; size: number }> = [];
+  if (parsedNvsStart > 0) {
+    segments.push({ offset: 0, size: parsedNvsStart });
+  }
+  if (nvsEnd < binarySize) {
+    segments.push({ offset: nvsEnd, size: binarySize - nvsEnd });
+  }
+  return segments;
+}
+
 function getSelectedFirmware() {
   const boardId = state.selectedBoardId;
   if (!boardId) {
@@ -1635,6 +1733,23 @@ function getPortInfo(loader: ESPLoader): SerialPortInfo | null {
 
 function makeBoardId(chipKey: string, brandKey: string, boardKey: string) {
   return `${chipKey}:${brandKey}:${boardKey}`;
+}
+
+function parseHexAddress(value: string | undefined) {
+  if (!value || !value.trim()) {
+    return null;
+  }
+  const trimmed = value.trim();
+  const isHex = /^0x[0-9a-f]+$/i.test(trimmed);
+  const isDecimal = /^[0-9]+$/.test(trimmed);
+  if (!isHex && !isDecimal) {
+    return null;
+  }
+  const parsed = Number.parseInt(trimmed, isHex ? 16 : 10);
+  if (!Number.isFinite(parsed) || !Number.isSafeInteger(parsed) || parsed < 0) {
+    return null;
+  }
+  return parsed;
 }
 
 function chipLabel(chipKey: string) {
